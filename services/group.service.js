@@ -1,5 +1,6 @@
 const { Group, GroupMember, Post, User } = require('../models');
 const { paginate, paginatedResult } = require('../utils/pagination');
+const { Op } = require('sequelize');
 
 const createGroup = async (userId, { name, description, coverImage }) => {
     const group = await Group.create({ name, description, coverImage, creatorId: userId });
@@ -105,9 +106,21 @@ const approveOrReject = async (groupId, adminId, memberId, action) => {
     }
 };
 
-const getGroupMembers = async (groupId) => {
+
+const getGroupMembers = async (groupId, requesterId) => {
+    // Verify membership
+    const requester = await GroupMember.findOne({ where: { groupId, userId: requesterId, status: 'approved' } });
+    if (!requester) {
+        const error = new Error('You must be a member to view the member list.');
+        error.statusCode = 403;
+        throw error;
+    }
+
     const members = await GroupMember.findAll({
-        where: { groupId },
+        where: {
+            groupId,
+            status: 'approved'
+        },
         include: [{ model: User, as: 'user', attributes: ['id', 'username', 'avatar'] }],
         order: [['role', 'ASC'], ['createdAt', 'ASC']],
     });

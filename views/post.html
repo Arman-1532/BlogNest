@@ -15,12 +15,73 @@
     </div>
   </div>
 
+  <!-- Reactors Modal -->
+  <div id="reactors-modal" class="modal-overlay" onclick="if(event.target === this) closeModal()">
+    <div class="modal">
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+      <h3 id="modal-title" style="margin-bottom: 20px;">Reactions</h3>
+      <div id="reactors-list" class="reactors-list">
+        <!-- Reactors will be listed here -->
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .reactors-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .reactor-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px;
+      border-radius: var(--radius);
+      transition: var(--transition);
+    }
+    .reactor-item:hover {
+      background: var(--lighter-gray);
+    }
+    .reactor-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--primary);
+      color: var(--white);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 0.9rem;
+    }
+    .reactor-info {
+      flex: 1;
+    }
+    .reactor-name {
+      font-weight: 600;
+      font-size: 0.95rem;
+      color: var(--dark);
+    }
+    .reaction-count-btn {
+      cursor: pointer;
+      font-weight: 700;
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+    .reaction-count-btn:hover {
+      background: rgba(0,0,0,0.05);
+      text-decoration: underline;
+    }
+  </style>
+
   <script src="/js/app.js"></script>
   <script>
     if (api.isLoggedIn()) renderNavbar();
 
     const slug = window.location.pathname.split('/post/')[1];
     let currentPost = null;
+    let allReactions = [];
 
     loadPost();
 
@@ -98,7 +159,8 @@
     async function loadReactions() {
       try {
         const res = await api.get(`/reactions/post/${currentPost.id}`);
-        const { likes, dislikes } = res.data;
+        const { likes, dislikes, reactions } = res.data;
+        allReactions = reactions;
 
         let userReaction = null;
         if (api.isLoggedIn()) {
@@ -111,20 +173,58 @@
         const section = document.getElementById('reactions-section');
         section.innerHTML = `
           ${api.isLoggedIn() ? `
-            <button class="reaction-btn ${userReaction && userReaction.type === 'LIKE' ? 'active-like' : ''}" onclick="react('LIKE')">
-              👍 <span>${likes}</span>
-            </button>
-            <button class="reaction-btn ${userReaction && userReaction.type === 'DISLIKE' ? 'active-dislike' : ''}" onclick="react('DISLIKE')">
-              👎 <span>${dislikes}</span>
-            </button>
+            <div class="reaction-btn ${userReaction && userReaction.type === 'LIKE' ? 'active-like' : ''}">
+              <span onclick="react('LIKE')" style="cursor:pointer">👍</span>
+              <span class="reaction-count-btn" onclick="showReactors('LIKE')">${likes}</span>
+            </div>
+            <div class="reaction-btn ${userReaction && userReaction.type === 'DISLIKE' ? 'active-dislike' : ''}">
+              <span onclick="react('DISLIKE')" style="cursor:pointer">👎</span>
+              <span class="reaction-count-btn" onclick="showReactors('DISLIKE')">${dislikes}</span>
+            </div>
           ` : `
-            <span class="reaction-btn">👍 ${likes}</span>
-            <span class="reaction-btn">👎 ${dislikes}</span>
+            <span class="reaction-btn">
+              👍 <span class="reaction-count-btn" onclick="showReactors('LIKE')">${likes}</span>
+            </span>
+            <span class="reaction-btn">
+              👎 <span class="reaction-count-btn" onclick="showReactors('DISLIKE')">${dislikes}</span>
+            </span>
           `}
         `;
       } catch (e) {
         document.getElementById('reactions-section').innerHTML = '';
       }
+    }
+
+    function showReactors(type) {
+      const filtered = allReactions.filter(r => r.type === type);
+      const modal = document.getElementById('reactors-modal');
+      const list = document.getElementById('reactors-list');
+      const title = document.getElementById('modal-title');
+
+      title.textContent = type === 'LIKE' ? 'People who liked' : 'People who disliked';
+      
+      if (filtered.length === 0) {
+        list.innerHTML = `<p style="color:var(--gray);text-align:center;padding:20px">No reactions yet.</p>`;
+      } else {
+        list.innerHTML = filtered.map(r => {
+          const user = r.user || {};
+          const initials = getInitials(user.username);
+          return `
+            <a href="/profile/${user.username}" class="reactor-item">
+              <div class="reactor-avatar">${initials}</div>
+              <div class="reactor-info">
+                <div class="reactor-name">${user.username}</div>
+              </div>
+            </a>
+          `;
+        }).join('');
+      }
+
+      modal.classList.add('active');
+    }
+
+    function closeModal() {
+      document.getElementById('reactors-modal').classList.remove('active');
     }
 
     async function react(type) {

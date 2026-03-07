@@ -2,13 +2,17 @@ const postService = require('../services/post.service');
 
 const createPost = async (req, res, next) => {
   try {
-    const { title, content, coverImage, status } = req.body;
+    const { title, content, coverImage, status, tags } = req.body;
 
     if (!title || !content) {
       return res.status(400).json({ success: false, message: 'Title and content are required.' });
     }
 
-    const post = await postService.createPost(req.user.id, { title, content, coverImage, status });
+    if (!tags || tags.length === 0) {
+      return res.status(400).json({ success: false, message: 'At least one tag is required.' });
+    }
+
+    const post = await postService.createPost(req.user.id, { title, content, coverImage, status, tags });
     res.status(201).json({ success: true, message: 'Post created successfully.', data: { post } });
   } catch (error) {
     next(error);
@@ -44,6 +48,10 @@ const getPostById = async (req, res, next) => {
 
 const updatePost = async (req, res, next) => {
   try {
+    const { tags } = req.body;
+    if (tags === '') {
+      return res.status(400).json({ success: false, message: 'Tags cannot be empty.' });
+    }
     const post = await postService.updatePost(req.params.id, req.user.id, req.body);
     res.status(200).json({ success: true, message: 'Post updated successfully.', data: { post } });
   } catch (error) {

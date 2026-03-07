@@ -8,6 +8,7 @@ const postRoutes = require('./routes/post.routes');
 const commentRoutes = require('./routes/comment.routes');
 const reactionRoutes = require('./routes/reaction.routes');
 const notificationRoutes = require('./routes/notification.routes');
+const groupRoutes = require('./routes/group.routes');
 const errorHandler = require('./middlewares/error.middleware');
 
 const app = express();
@@ -27,6 +28,7 @@ app.get('/register', (req, res) => res.sendFile(path.join(__dirname, 'views', 'r
 app.get('/dashboard', (req, res) => res.sendFile(path.join(__dirname, 'views', 'dashboard.html')));
 app.get('/post/:slug', (req, res) => res.sendFile(path.join(__dirname, 'views', 'post.html')));
 app.get('/profile/:username', (req, res) => res.sendFile(path.join(__dirname, 'views', 'profile.html')));
+app.get('/groups/:id', (req, res) => res.sendFile(path.join(__dirname, 'views', 'group.html')));
 
 // API routes
 app.use('/api/auth', authRoutes);
@@ -35,6 +37,7 @@ app.use('/api/posts', postRoutes);
 app.use('/api/comments', commentRoutes);
 app.use('/api/reactions', reactionRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/groups', groupRoutes);
 
 // Error handler
 app.use(errorHandler);

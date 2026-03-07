@@ -8,9 +8,9 @@ const createSlug = (title) => {
     .replace(/^-|-$/g, '') + '-' + Date.now();
 };
 
-const createPost = async (userId, { title, content, coverImage, status }) => {
+const createPost = async (userId, { title, content, coverImage, status, tags }) => {
   const slug = createSlug(title);
-  const post = await Post.create({ title, slug, content, coverImage, status, userId });
+  const post = await Post.create({ title, slug, content, coverImage, status, tags, userId });
 
   // Notify all followers
   const follows = await Follow.findAll({ where: { followingId: userId } });
@@ -33,9 +33,20 @@ const createPost = async (userId, { title, content, coverImage, status }) => {
 
 const getAllPosts = async (query) => {
   const { page, limit, offset } = paginate(query);
+  const { Op } = require('sequelize');
+
+  const where = { status: 'published', groupId: null };
+
+  if (query.search && query.search.trim()) {
+    const search = `%${query.search.trim()}%`;
+    where[Op.or] = [
+      { title: { [Op.like]: search } },
+      { tags: { [Op.like]: search } },
+    ];
+  }
 
   const { count, rows } = await Post.findAndCountAll({
-    where: { status: 'published' },
+    where,
     include: [
       { model: User, as: 'author', attributes: ['id', 'username', 'avatar'] },
     ],
@@ -52,21 +63,6 @@ const getPostBySlug = async (slug) => {
     where: { slug },
     include: [
       { model: User, as: 'author', attributes: ['id', 'username', 'avatar', 'bio'] },
-      {
-        model: Comment,
-        as: 'comments',
-        where: { parentId: null },
-        required: false,
-        include: [
-          { model: User, as: 'user', attributes: ['id', 'username', 'avatar'] },
-          {
-            model: Comment,
-            as: 'replies',
-            include: [{ model: User, as: 'user', attributes: ['id', 'username', 'avatar'] }],
-          },
-        ],
-        order: [['createdAt', 'DESC']],
-      },
       { model: Reaction, as: 'reactions' },
     ],
   });
@@ -76,6 +72,34 @@ const getPostBySlug = async (slug) => {
     error.statusCode = 404;
     throw error;
   }
+
+  // Build a nested comments tree (include all levels of replies)
+  const allComments = await Comment.findAll({
+    where: { postId: post.id },
+    include: [{ model: User, as: 'user', attributes: ['id', 'username', 'avatar'] }],
+    order: [['createdAt', 'ASC']],
+  });
+
+  const map = {};
+  allComments.forEach(c => {
+    const obj = c.get({ plain: true });
+    obj.replies = [];
+    map[obj.id] = obj;
+  });
+
+  const roots = [];
+  Object.values(map).forEach(obj => {
+    if (obj.parentId) {
+      if (map[obj.parentId]) {
+        map[obj.parentId].replies.push(obj);
+      }
+    } else {
+      roots.push(obj);
+    }
+  });
+
+  // attach nested comments to the post object
+  post.dataValues.comments = roots;
 
   return post;
 };

@@ -64,20 +64,36 @@ const getCommentsByPost = async (postId, query) => {
     throw error;
   }
 
-  const { count, rows } = await Comment.findAndCountAll({
-    where: { postId, parentId: null },
-    include: [
-      { model: User, as: 'user', attributes: ['id', 'username', 'avatar'] },
-      {
-        model: Comment,
-        as: 'replies',
-        include: [{ model: User, as: 'user', attributes: ['id', 'username', 'avatar'] }],
-      },
-    ],
-    order: [['createdAt', 'DESC']],
-    limit,
-    offset,
+  // Fetch all comments for the post (to build a nested tree) including user info
+  const allComments = await Comment.findAll({
+    where: { postId },
+    include: [{ model: User, as: 'user', attributes: ['id', 'username', 'avatar'] }],
+    order: [['createdAt', 'ASC']],
   });
+
+  // Convert to plain objects and build a map
+  const map = {};
+  allComments.forEach(c => {
+    const obj = c.get({ plain: true });
+    obj.replies = [];
+    map[obj.id] = obj;
+  });
+
+  // Build tree
+  const roots = [];
+  Object.values(map).forEach(obj => {
+    if (obj.parentId) {
+      if (map[obj.parentId]) {
+        map[obj.parentId].replies.push(obj);
+      }
+      // if parent not found, skip (shouldn't happen because of validation on create)
+    } else {
+      roots.push(obj);
+    }
+  });
+
+  const count = roots.length;
+  const rows = roots.slice(offset, offset + limit);
 
   return paginatedResult(rows, count, page, limit);
 };
@@ -121,4 +137,3 @@ const deleteComment = async (commentId, userId, userRole) => {
 };
 
 module.exports = { createComment, getCommentsByPost, updateComment, deleteComment };
-

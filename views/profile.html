@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Profile - BlogNest</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <nav class="navbar" id="navbar"></nav>
+
+  <div class="container">
+    <div id="profile-loading" class="loading"><div class="spinner"></div></div>
+    <div id="profile-content" style="display:none">
+      <!-- Profile Header -->
+      <div class="profile-header">
+        <div class="profile-avatar" id="profile-avatar"></div>
+        <div class="profile-info">
+          <h1 id="profile-username"></h1>
+          <p class="bio" id="profile-bio"></p>
+          <div class="profile-stats">
+            <span><strong id="stat-posts">0</strong> Posts</span>
+            <span><strong id="stat-followers">0</strong> Followers</span>
+            <span><strong id="stat-following">0</strong> Following</span>
+          </div>
+          <div id="profile-actions" style="margin-top:12px"></div>
+        </div>
+      </div>
+
+      <!-- Edit Profile Section -->
+      <div id="edit-profile-section" style="display:none">
+        <div class="card" style="margin-bottom:24px">
+          <div class="card-body">
+            <h3 style="margin-bottom:16px">Edit Profile</h3>
+            <div id="edit-alert" class="alert"></div>
+            <form id="editProfileForm">
+              <div class="form-group">
+                <label for="editUsername">Username</label>
+                <input type="text" id="editUsername" required>
+              </div>
+              <div class="form-group">
+                <label for="editBio">Bio</label>
+                <textarea id="editBio" rows="3" placeholder="Tell us about yourself..."></textarea>
+              </div>
+              <div style="display:flex;gap:8px">
+                <button type="submit" class="btn btn-primary btn-sm">Save Changes</button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="toggleEditProfile()">Cancel</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <!-- User Posts -->
+      <h3 style="margin-bottom:16px">Posts</h3>
+      <div id="user-posts-empty" class="empty-state" style="display:none">
+        <p>No posts yet.</p>
+      </div>
+      <div class="posts-grid" id="user-posts"></div>
+      <div class="pagination" id="user-posts-pagination"></div>
+    </div>
+  </div>
+
+  <script src="/js/app.js"></script>
+  <script>
+    if (api.isLoggedIn()) renderNavbar();
+
+    const profileUsername = window.location.pathname.split('/profile/')[1];
+    const currentUser = api.getUser();
+    let profileUser = null;
+    let isOwnProfile = false;
+
+    loadProfile();
+
+    async function loadProfile() {
+      try {
+        const res = await api.get(`/users/profile/${profileUsername}`);
+        const { user, postsCount, followersCount, followingCount } = res.data;
+        profileUser = user;
+        isOwnProfile = currentUser && currentUser.id === user.id;
+
+        document.title = `${user.username} - BlogNest`;
+        document.getElementById('profile-loading').style.display = 'none';
+        document.getElementById('profile-content').style.display = 'block';
+
+        document.getElementById('profile-avatar').textContent = getInitials(user.username);
+        document.getElementById('profile-username').textContent = user.username;
+        document.getElementById('profile-bio').textContent = user.bio || 'No bio yet.';
+        document.getElementById('stat-posts').textContent = postsCount;
+        document.getElementById('stat-followers').textContent = followersCount;
+        document.getElementById('stat-following').textContent = followingCount;
+
+        // Actions
+        const actionsEl = document.getElementById('profile-actions');
+        if (isOwnProfile) {
+          actionsEl.innerHTML = `
+            <button class="btn btn-sm btn-outline" onclick="toggleEditProfile()">Edit Profile</button>
+          `;
+          // Prefill edit form
+          document.getElementById('editUsername').value = user.username;
+          document.getElementById('editBio').value = user.bio || '';
+        } else if (api.isLoggedIn()) {
+          actionsEl.innerHTML = `<button class="btn btn-sm btn-primary" id="followBtn" onclick="toggleFollow()">Loading...</button>`;
+          checkFollowStatus();
+        }
+
+        loadUserPosts(1);
+      } catch (err) {
+        document.getElementById('profile-loading').innerHTML = `
+          <div class="empty-state">
+            <h3>User not found</h3>
+            <p>${err.message}</p>
+          </div>
+        `;
+      }
+    }
+
+    // ===== Follow =====
+    let isFollowing = false;
+
+    async function checkFollowStatus() {
+      try {
+        const res = await api.get(`/users/${profileUser.id}/followers`);
+        const followers = res.data.data || [];
+        isFollowing = followers.some(f => f.id === currentUser.id);
+        updateFollowBtn();
+      } catch (e) {
+        updateFollowBtn();
+      }
+    }
+
+    function updateFollowBtn() {
+      const btn = document.getElementById('followBtn');
+      if (!btn) return;
+      btn.textContent = isFollowing ? 'Unfollow' : 'Follow';
+      btn.className = isFollowing ? 'btn btn-sm btn-secondary' : 'btn btn-sm btn-primary';
+    }
+
+    async function toggleFollow() {
+      try {
+        if (isFollowing) {
+          await api.delete(`/users/${profileUser.id}/follow`);
+          isFollowing = false;
+        } else {
+          await api.post(`/users/${profileUser.id}/follow`);
+          isFollowing = true;
+        }
+        updateFollowBtn();
+        loadProfile();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    // ===== Edit Profile =====
+    function toggleEditProfile() {
+      const section = document.getElementById('edit-profile-section');
+      section.style.display = section.style.display === 'none' ? 'block' : 'none';
+    }
+
+    document.getElementById('editProfileForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        const data = {
+          username: document.getElementById('editUsername').value,
+          bio: document.getElementById('editBio').value
+        };
+        const res = await api.put('/users/profile', data);
+        const updatedUser = res.data.user;
+
+        // Update stored user
+        const stored = api.getUser();
+        stored.username = updatedUser.username;
+        api.setUser(stored);
+
+        showAlert('edit-alert', 'Profile updated successfully!', 'success');
+
+        // If username changed, redirect
+        if (updatedUser.username !== profileUsername) {
+          setTimeout(() => {
+            window.location.href = `/profile/${updatedUser.username}`;
+          }, 1000);
+        } else {
+          loadProfile();
+          toggleEditProfile();
+        }
+      } catch (err) {
+        showAlert('edit-alert', err.message, 'error');
+      }
+    });
+
+    // ===== User Posts =====
+    async function loadUserPosts(page) {
+      const container = document.getElementById('user-posts');
+      const empty = document.getElementById('user-posts-empty');
+      container.innerHTML = '';
+      empty.style.display = 'none';
+
+      try {
+        const res = await api.get(`/posts/user/${profileUser.id}?page=${page}&limit=9`);
+        const posts = res.data.data;
+
+        if (posts.length === 0) {
+          empty.style.display = 'block';
+          return;
+        }
+
+        container.innerHTML = posts.map(post => {
+          const author = post.author || {};
+          const excerpt = truncateText(post.content, 120);
+          const coverHtml = post.coverImage
+            ? `<img src="${post.coverImage}" class="card-cover" alt="${post.title}">`
+            : '';
+
+          return `
+            <div class="card post-card">
+              ${coverHtml}
+              <div class="card-body">
+                <div class="post-meta">
+                  <div>
+                    <span style="font-weight:600">${(author.username || 'Unknown').toUpperCase()}</span>
+                    <span style="margin-left:8px;color:var(--gray)">${timeAgo(post.createdAt)}</span>
+                  </div>
+                </div>
+                <h3><a href="/post/${post.slug}">${post.title}</a></h3>
+                <p class="post-excerpt">${excerpt}</p>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        renderPagination('user-posts-pagination', res.data.pagination, loadUserPosts);
+      } catch (err) {
+        container.innerHTML = `<p style="color:var(--danger)">${err.message}</p>`;
+      }
+    }
+  </script>
+</body>
+</html>

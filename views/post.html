@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Post - BlogNest</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <nav class="navbar" id="navbar"></nav>
+
+  <div class="container">
+    <div class="post-detail" id="post-detail">
+      <div id="post-loading" class="loading"><div class="spinner"></div></div>
+    </div>
+  </div>
+
+  <script src="/js/app.js"></script>
+  <script>
+    if (api.isLoggedIn()) renderNavbar();
+
+    const slug = window.location.pathname.split('/post/')[1];
+    let currentPost = null;
+
+    loadPost();
+
+    async function loadPost() {
+      try {
+        const res = await api.get(`/posts/slug/${slug}`);
+        currentPost = res.data.post;
+        document.title = `${currentPost.title} - BlogNest`;
+        renderPost(currentPost);
+      } catch (err) {
+        document.getElementById('post-detail').innerHTML = `
+          <div class="empty-state">
+            <h3>Post not found</h3>
+            <p>${err.message}</p>
+            <a href="/dashboard" class="btn btn-primary" style="margin-top:16px">Back to Dashboard</a>
+          </div>
+        `;
+      }
+    }
+
+    function renderPost(post) {
+      const author = post.author || {};
+      const coverHtml = post.coverImage
+        ? `<img src="${post.coverImage}" class="post-cover" alt="${post.title}">`
+        : '';
+
+      const commentsHtml = (post.comments || []).map(c => renderComment(c)).join('');
+
+      document.getElementById('post-detail').innerHTML = `
+        <div class="post-header">
+          <a href="/dashboard" style="font-size:0.85rem;color:var(--gray)">← Back to Dashboard</a>
+          ${coverHtml}
+          <h1 style="margin-top:16px">${post.title}</h1>
+          <div class="post-meta" style="margin-top:12px">
+            <div>
+              <a href="/profile/${author.username}"><span class="name-box author">${(author.username || 'Unknown').toUpperCase()}</span></a>
+              <span style="margin-left:8px;color:var(--gray)">${timeAgo(post.createdAt)}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="post-content">${formatContent(post.content)}</div>
+
+        <div class="reactions" id="reactions-section">
+          <span class="loading"><div class="spinner"></div></span>
+        </div>
+
+        <div class="comments-section">
+          <h3>Comments</h3>
+          ${api.isLoggedIn() ? `
+            <div class="comment-form">
+              <div id="comment-alert" class="alert"></div>
+              <form onsubmit="submitComment(event)">
+                <div class="form-group">
+                  <textarea id="commentContent" placeholder="Write a comment..." rows="3" required></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary btn-sm">Post Comment</button>
+              </form>
+            </div>
+          ` : '<p style="color:var(--gray);margin-bottom:16px"><a href="/login">Sign in</a> to comment.</p>'}
+          <div id="comments-list">${commentsHtml}</div>
+          ${commentsHtml.length === 0 ? '<div class="empty-state"><p>No comments yet. Be the first!</p></div>' : ''}
+        </div>
+      `;
+
+      loadReactions();
+    }
+
+    function formatContent(content) {
+      if (!content) return '';
+      return content.split('\n').map(p => p.trim() ? `<p>${p}</p>` : '').join('');
+    }
+
+    // ===== Reactions =====
+    async function loadReactions() {
+      try {
+        const res = await api.get(`/reactions/post/${currentPost.id}`);
+        const { likes, dislikes } = res.data;
+
+        let userReaction = null;
+        if (api.isLoggedIn()) {
+          try {
+            const ures = await api.get(`/reactions/post/${currentPost.id}/me`);
+            userReaction = ures.data.reaction;
+          } catch (e) {}
+        }
+
+        const section = document.getElementById('reactions-section');
+        section.innerHTML = `
+          ${api.isLoggedIn() ? `
+            <button class="reaction-btn ${userReaction && userReaction.type === 'LIKE' ? 'active-like' : ''}" onclick="react('LIKE')">
+              👍 <span>${likes}</span>
+            </button>
+            <button class="reaction-btn ${userReaction && userReaction.type === 'DISLIKE' ? 'active-dislike' : ''}" onclick="react('DISLIKE')">
+              👎 <span>${dislikes}</span>
+            </button>
+          ` : `
+            <span class="reaction-btn">👍 ${likes}</span>
+            <span class="reaction-btn">👎 ${dislikes}</span>
+          `}
+        `;
+      } catch (e) {
+        document.getElementById('reactions-section').innerHTML = '';
+      }
+    }
+
+    async function react(type) {
+      try {
+        await api.post(`/reactions/post/${currentPost.id}`, { type });
+        loadReactions();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    // ===== Comments =====
+    function renderComment(comment) {
+      const user = comment.user || {};
+      const replies = (comment.replies || []).map(r => renderComment(r)).join('');
+
+      return `
+        <div class="comment">
+          <div class="comment-header">
+            <div class="comment-author">
+              <a href="/profile/${user.username}"><span class="name-box commenter">${(user.username || 'Unknown').toUpperCase()}</span></a>
+            </div>
+            <span class="comment-date">${timeAgo(comment.createdAt)}</span>
+          </div>
+          <div class="comment-body">${comment.content}</div>
+          ${api.isLoggedIn() ? `<button class="reply-btn" onclick="showReplyForm(${comment.id}, this)">Reply</button>` : ''}
+          ${replies ? `<div class="replies">${replies}</div>` : ''}
+        </div>
+      `;
+    }
+
+    function showReplyForm(parentId, btn) {
+      const existing = btn.parentElement.querySelector('.reply-form');
+      if (existing) { existing.remove(); return; }
+
+      const form = document.createElement('div');
+      form.className = 'reply-form';
+      form.style.marginTop = '8px';
+      form.innerHTML = `
+        <div class="form-group">
+          <textarea class="reply-textarea" placeholder="Write a reply..." rows="2" required style="font-size:0.85rem"></textarea>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="submitReply(${parentId}, this)">Reply</button>
+        <button class="btn btn-secondary btn-sm" onclick="this.parentElement.remove()">Cancel</button>
+      `;
+      btn.parentElement.insertBefore(form, btn.nextSibling);
+    }
+
+    async function submitComment(e) {
+      e.preventDefault();
+      const content = document.getElementById('commentContent').value;
+      try {
+        await api.post(`/comments/post/${currentPost.id}`, { content });
+        document.getElementById('commentContent').value = '';
+        loadPost();
+      } catch (err) {
+        showAlert('comment-alert', err.message, 'error');
+      }
+    }
+
+    async function submitReply(parentId, btn) {
+      const textarea = btn.parentElement.querySelector('.reply-textarea');
+      const content = textarea.value;
+      if (!content.trim()) return;
+
+      try {
+        await api.post(`/comments/post/${currentPost.id}`, { content, parentId });
+        loadPost();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+  </script>
+</body>
+</html>

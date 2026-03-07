@@ -52,7 +52,7 @@ const approveOrReject = async (req, res, next) => {
 
 const getGroupMembers = async (req, res, next) => {
     try {
-        const members = await groupService.getGroupMembers(req.params.id);
+        const members = await groupService.getGroupMembers(req.params.id, req.user.id);
         res.status(200).json({ success: true, data: { members } });
     } catch (error) {
         next(error);
